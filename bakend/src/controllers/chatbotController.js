@@ -1,5 +1,70 @@
 const db = require('../config/db');
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CONFIGURACIÓN DE GROQ  (pon la key en tu .env, nunca en el frontend)
+// ─────────────────────────────────────────────────────────────────────────────
+const GROQ_URL   = 'https://api.groq.com/openai/v1/chat/completions';
+const GROQ_MODEL = 'llama-3.1-8b-instant';
+
+/**
+ * POST /chatbot/groq
+ * Proxy seguro entre el frontend y la API de Groq.
+ * Body: { system: string, messages: [{role, content}] }
+ *
+ * La API key nunca sale del servidor; el frontend no la conoce.
+ */
+async function groqChat(req, res) {
+  const { system, messages } = req.body;
+
+  if (!messages || !Array.isArray(messages)) {
+    return res.status(400).json({ error: 'Se requiere el array "messages"' });
+  }
+
+  const groqKey = process.env.GROQ_API_KEY;
+  if (!groqKey) {
+    console.error('GROQ_API_KEY no está definida en el entorno');
+    return res.status(500).json({ error: 'Configuración de IA no disponible' });
+  }
+
+  try {
+    const groqRes = await fetch(GROQ_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${groqKey}`,
+      },
+      body: JSON.stringify({
+        model:       GROQ_MODEL,
+        max_tokens:  250,
+        temperature: 0.4,
+        messages: [
+          ...(system ? [{ role: 'system', content: system }] : []),
+          ...messages,
+        ],
+      }),
+    });
+
+    if (!groqRes.ok) {
+      const errBody = await groqRes.text();
+      console.error('Groq error:', groqRes.status, errBody);
+      return res.status(502).json({ error: `Error de Groq: ${groqRes.status}` });
+    }
+
+    const data    = await groqRes.json();
+    const content = data.choices?.[0]?.message?.content ?? '';
+    return res.json({ content });
+
+  } catch (err) {
+    console.error('groqChat error:', err);
+    return res.status(500).json({ error: 'Error interno al contactar con Groq' });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /chatbot/recomendar
+// Body: { respuestas: { acompañantes, actividades[], tranquilidad, accesible } }
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Mapa de preguntas del chatbot → etiquetas asociadas.
  *
@@ -7,9 +72,6 @@ const db = require('../config/db');
  * Cada respuesta del usuario se traduce en una o varias etiquetas.
  * El backend recibe el objeto "respuestas" y devuelve planes recomendados.
  */
-
-// POST /chatbot/recomendar
-// Body: { respuestas: { acompañantes, actividades[], tranquilidad, accesible } }
 async function recomendar(req, res) {
   const { respuestas } = req.body;
 
@@ -64,7 +126,6 @@ async function recomendar(req, res) {
   const lista = Array.from(etiquetasSeleccionadas);
 
   // ── Buscar planes que coincidan con AL MENOS la mitad de las etiquetas ──
-  // (más flexible que exigir todas, mejor experiencia de usuario)
   const minCoincidencias = Math.max(1, Math.ceil(lista.length / 2));
 
   try {
@@ -179,4 +240,4 @@ function preguntas(req, res) {
   ]);
 }
 
-module.exports = { recomendar, preguntas };
+module.exports = { groqChat, recomendar, preguntas };

@@ -1,25 +1,25 @@
 const jwt = require('jsonwebtoken');
 
 /**
- * Verifica que la petición lleva un JWT válido en la cabecera Authorization.
- * Si es válido, adjunta el payload en req.usuario y continúa.
+ * Middleware de autenticación JWT.
+ * Lee el token del header Authorization: Bearer <token>
+ * Si es válido, adjunta req.usuario = { id, rol }
  */
-function authMiddleware(req, res, next) {
-  const authHeader = req.headers['authorization'];
+module.exports = (req, res, next) => {
+  const authHeader = req.headers.authorization;
 
+  // ✅ CORRECCIÓN: comprobar que existe y empieza por "Bearer "
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Token no proporcionado' });
+    return res.status(401).json({ error: 'Token requerido. Inicia sesión para continuar.' });
   }
 
   const token = authHeader.split(' ')[1];
 
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
-    req.usuario = payload; // { id, email, rol }
+    // jwt.verify lanza si el token es inválido o ha caducado
+    req.usuario = jwt.verify(token, process.env.JWT_SECRET);
     next();
   } catch (err) {
-    return res.status(401).json({ error: 'Token inválido o expirado' });
+    return res.status(401).json({ error: 'Token inválido o caducado. Inicia sesión de nuevo.' });
   }
-}
-
-module.exports = authMiddleware;
+};
